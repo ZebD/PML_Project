@@ -1,0 +1,188 @@
+---
+title: "Prediction Assignment"
+author: "GZC"
+date: "August 7, 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Practical Machine Learning - Final Project
+
+### Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset).
+
+The six young health participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: 
+- Class A: exactly according to the specification
+- Class B: Throwing the elbows to the front
+- Class C: Lifting the dumbbell only halfway
+- Class D: Lowering the dumbbell only halfway
+- Class E: Throwing the hips to the front
+
+Read more: http://groupware.les.inf.puc-rio.br/har#dataset#ixzz4Gj9QE200
+
+### Data
+
+The training data for this project are available here:
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>
+
+The test data are available here:
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>
+
+
+The data for this project come from this source: <http://groupware.les.inf.puc-rio.br/har>. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+
+## Methodology
+- Download and Clean up the data.
+- Further split training data into myTrain (60%) and a cross-validation set myTest (40%).
+- Select Variables to usein Model Training.
+- Train Model using selected variables.
+- Estimate out-of-sample error.
+- Apply prediction method on the test data set provided.
+
+
+### Load Required Libraries
+```{r}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(RColorBrewer)
+library(randomForest)
+library(AppliedPredictiveModeling)
+library(dplyr)
+```
+
+### Download data files
+
+Download training data:
+```{r download_training}
+#download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",destfile="training.csv")
+
+training = read.csv("training.csv", na.strings = c("NA", "#DIV/0!", ""))
+```
+
+Download test data:
+```{r download_test}
+#download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",destfile="test.csv")
+
+test = read.csv("test.csv", na.strings = c("NA", "#DIV/0!", ""))
+```
+
+
+### Cleaning the data
+Remove the first index column, as this does not have predictive value.
+```{r remove_first_column}
+#Remove first columns from both training and test data. No predictive value.
+training <- select(training, -(X:num_window))
+test <- select(test,-(X:num_window))
+```
+
+Exclude columns that are more than 70% NA; Keep same columns in test data set
+```{r exclude_non-essential_columns}
+#Keep only colums that meet criteria
+training <- training[, colSums(is.na(training)) < nrow(training) * 0.7]
+#Keep same columns in test data, excluding "classe", which is absent from test data set
+test <- test[colnames(subset(training,select= -c(classe)))]
+
+```
+
+
+### Divide data
+Divide training data into two segments (60% training, 40% cross-validation set):
+```{r segment_training}
+#Divide training data into two segments (60% training, 40% cross-validation set)
+myPartition <- createDataPartition(training$classe, p=0.6, list=FALSE)
+myTrain <- training[myPartition, ]
+myTest <- training[-myPartition, ]
+dim(myTrain); dim(myTest)
+```
+
+
+### Prediction Methods
+
+#### Random Forest
+Train Random Forest Model:
+```{r random_forest}
+set.seed(1234)
+rfFit <- randomForest(classe ~ ., data = myTrain, ntree=500)
+#rfFit <- train(classe ~ ., data = myTrain, method="rf")
+#rfFit <- rpart(classe ~ ., data = myTrain, method="class")
+
+plot(rfFit)
+
+```
+
+Use rfcv cross-validation to identify most important model variables and retrain model. This is helps reduce overfitting.
+```{r select_top_variables}
+myRank <- rfcv(trainx = myTrain[,-53], trainy = myTrain[,53], ntree = 25)
+with(myRank, plot(n.var,error.cv))
+
+#Plot the most important variables
+varImpPlot(rfFit, n.var=15)
+
+#Retrain model using only top variables.
+vars <- varImp(rfFit)
+top_vars <- rownames(vars)[order(vars, decreasing = TRUE)][1:15]
+
+rfFit_retrained <- randomForest(x = myTrain[,top_vars], y = myTrain$classe, ntree=25)
+```
+
+
+Perform prediction on cross-validation data using Random Forest model:
+```{r random_forest_prediction}
+#rf_prediction <- predict(rfFit, myTest, type = "class")
+rf_prediction <- predict(rfFit_retrained, myTest)
+
+#Evaluate performance of prediction using Confusion Matrix.
+rf_performance <- confusionMatrix(rf_prediction, myTest$classe)
+rf_performance
+```
+
+
+#### Classification Tree
+Train Classification Tree Model:
+```{r classification_tree}
+set.seed(1234)
+ctFit <- rpart(classe ~ ., data = myTrain, method = "class")
+fancyRpartPlot(ctFit)
+```
+
+Perform prediction on cross-validation data using Classification Tree model:
+```{r classification_tree_prediction}
+ct_prediction <- predict(ctFit, myTest, type = "class")
+
+#Evaluate performance of prediction using Confusion Matrix.
+ct_performance <- confusionMatrix(ct_prediction, myTest$classe)
+ct_performance
+```
+
+### Prediction Method Selection
+
+```{r prediction_model_results, echo=FALSE}
+print(c("Random Forest Prediction Accuracy:",rf_performance$overall['Accuracy']))
+print(c("Classification Tree Prediction Accuracy:",ct_performance$overall['Accuracy']))
+```
+
+Based on the analysis above, we see that the Random Forest Model has significantly higher prediction accuracy on the cross-validation set than the Classification model.
+
+### Expected Out-of-Sample Error
+
+The Random Forest Method is therefore chosen for prediction due to its higher accuracy. 
+The expected out of sample error is `r round(1 - rf_performance$overall['Accuracy'], digits=3)`
+
+### Prediction on Test Data Set
+Prediction on Final Test Data Set performed using previously trained Random Forest Model.
+```{r final_prediction}
+print(colnames(myTrain))
+print(colnames(test))
+final_result <- predict(rfFit_retrained, test)
+final_result
+
+```
