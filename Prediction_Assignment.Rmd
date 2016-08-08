@@ -111,10 +111,9 @@ dim(myTrain); dim(myTest)
 Train Random Forest Model:
 ```{r random_forest}
 set.seed(1234)
-rfFit <- randomForest(classe ~ ., data = myTrain, ntree=500)
-#rfFit <- train(classe ~ ., data = myTrain, method="rf")
-#rfFit <- rpart(classe ~ ., data = myTrain, method="class")
+rfFit <- randomForest(classe ~ ., data = myTrain, ntree=50)
 
+#Plot showing convergence of error as number of trees increases
 plot(rfFit)
 
 ```
@@ -122,9 +121,10 @@ plot(rfFit)
 Use rfcv cross-validation to identify most important model variables and retrain model. This is helps reduce overfitting.
 ```{r select_top_variables}
 myRank <- rfcv(trainx = myTrain[,-53], trainy = myTrain[,53], ntree = 25)
-with(myRank, plot(n.var,error.cv))
+with(myRank, plot(n.var,error.cv, lwd=1, type="o"))
 
-#Plot the most important variables
+#Plot the most important variables. 
+#Based on the graph above, I've picked 15 as a suitable number of variables.
 varImpPlot(rfFit, n.var=15)
 
 #Retrain model using only top variables.
@@ -137,7 +137,6 @@ rfFit_retrained <- randomForest(x = myTrain[,top_vars], y = myTrain$classe, ntre
 
 Perform prediction on cross-validation data using Random Forest model:
 ```{r random_forest_prediction}
-#rf_prediction <- predict(rfFit, myTest, type = "class")
 rf_prediction <- predict(rfFit_retrained, myTest)
 
 #Evaluate performance of prediction using Confusion Matrix.
@@ -165,10 +164,9 @@ ct_performance
 
 ### Prediction Method Selection
 
-```{r prediction_model_results, echo=FALSE}
-print(c("Random Forest Prediction Accuracy:",rf_performance$overall['Accuracy']))
-print(c("Classification Tree Prediction Accuracy:",ct_performance$overall['Accuracy']))
-```
+Random Forest Prediction Accuracy: `r round(rf_performance$overall['Accuracy'], digits=3)`
+Classification Tree Prediction Accuracy: `r round(ct_performance$overall['Accuracy'], digits=3)`
+
 
 Based on the analysis above, we see that the Random Forest Model has significantly higher prediction accuracy on the cross-validation set than the Classification model.
 
@@ -180,8 +178,6 @@ The expected out of sample error is `r round(1 - rf_performance$overall['Accurac
 ### Prediction on Test Data Set
 Prediction on Final Test Data Set performed using previously trained Random Forest Model.
 ```{r final_prediction}
-print(colnames(myTrain))
-print(colnames(test))
 final_result <- predict(rfFit_retrained, test)
 final_result
 
